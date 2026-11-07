@@ -2,7 +2,8 @@
 ## Title: ForeverXP |cff7fd4ffRoute Advisor|r
 ## Notes: Suggests the most efficient XP route for your level, zone, gear and current activity, with gentle on-screen overlays.|n|cff999999/fxp to open options|r
 ## Author: joeburgwin
-## Version: 0.1.0
+## Version: 0.2.0
+## OptionalDeps: Questie, QuestieDB
 ## SavedVariables: ForeverXPDB
 ## SavedVariablesPerCharacter: ForeverXPCharDB
 ## IconTexture: Interface\Icons\INV_Misc_Map_01
@@ -18,6 +19,8 @@ Data\Dungeons.lua
 Tracker.lua
 Gear.lua
 Quests.lua
+Questie.lua
+Route.lua
 Advisor.lua
 UI\Panel.lua
 UI\Arrow.lua

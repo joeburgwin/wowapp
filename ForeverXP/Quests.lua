@@ -90,6 +90,12 @@ function Q:Scan()
                         q.wp = { mapID = mapID, x = onMap[e.questID].x, y = onMap[e.questID].y }
                     end
                 end
+                -- completed quest with no client waypoint: ask Questie where it is turned in
+                if q.complete and not q.wp and mapID and ns.QuestieBridge and ns.QuestieBridge.IsAvailable() then
+                    local px, py = API.PlayerMapPosition(mapID)
+                    local x, y, who = ns.QuestieBridge.TurnInLocation(e.questID, mapID, px, py)
+                    if x then q.wp = { mapID = mapID, x = x, y = y, who = who } end
+                end
                 q.distSq = API.QuestDistanceSq(e.questID)
                 table.insert(list, q)
                 byID[e.questID] = q

@@ -104,6 +104,10 @@ function A.Build(ctx)
     if ctx.inCity then zoneState = "city" end
     if ctx.inInstance then zoneState = "instance" end
 
+    local route = ctx.route or {}
+    local routeSummary = ns.Route and ns.Route.Summary(route, ctx.routeYards) or nil
+    local pickups = ctx.pickups or {}
+
     local nextZones = ns.ZonesForLevel(level, faction)
     local function bestOtherZone()
         for _, c in ipairs(nextZones) do
@@ -136,17 +140,24 @@ function A.Build(ctx)
             local score = 45 + math.min(25, pct(qs.xpInZone, xpMax))
             local pq = ctx.priorityQuest
             if pq and pq.complete then pq = nil end
+            local nextStep = route[1]
+            local detail = string.format("%d active quest%s here worth ~%s XP (%.0f%% of a level). ",
+                inZone, inZone == 1 and "" or "s", ns.FormatNumber(qs.xpInZone), pct(qs.xpInZone, xpMax))
+            if routeSummary then
+                detail = detail .. routeSummary .. ". Next stop: " .. (nextStep.title or "?") .. "."
+            else
+                detail = detail .. "Next: " .. (pq and pq.title or questNames(qs.inZone, 2)) .. "."
+            end
             add({ kind = "quest", score = score, icon = "●",
                 title = string.format("Keep questing in %s", zone.name),
-                detail = string.format("%d active quest%s here worth ~%s XP (%.0f%% of a level). Next: %s.",
-                    inZone, inZone == 1 and "" or "s", ns.FormatNumber(qs.xpInZone), pct(qs.xpInZone, xpMax),
-                    pq and pq.title or questNames(qs.inZone, 2)),
-                action = questAction(pq or qs.inZone[1]) })
-        elseif not qs.full then
+                detail = detail,
+                action = nextStep and { questID = nextStep.questID, mapID = nextStep.mapID, x = nextStep.x, y = nextStep.y } or questAction(pq or qs.inZone[1]) })
+        elseif not qs.full and #pickups == 0 then
             add({ kind = "pickup", score = 55, icon = "?",
                 title = string.format("Pick up quests at %s", zone.hub or zone.name),
-                detail = string.format("You only have %d quest%s for %s (%d-%d). Fill your log before you grind.",
-                    inZone, inZone == 1 and "" or "s", zone.name, lo, hi) })
+                detail = string.format("You only have %d quest%s for %s (%d-%d). Fill your log before you grind.%s",
+                    inZone, inZone == 1 and "" or "s", zone.name, lo, hi,
+                    ctx.questie and "" or " Install Questie and the route will show exactly which quest givers to visit.") })
         end
         -- heading toward the end of the zone's range: queue up the next one
         local span = math.max(hi - lo, 1)
@@ -175,6 +186,20 @@ function A.Build(ctx)
                 title = "Back out to " .. zoneLabel(c.zone, c.min, c.max),
                 detail = string.format("Cities give no XP. Hub: %s.", c.zone.hub or "?"), zone = c.zone })
         end
+    end
+
+    --------------------------------------------------------------- Questie pickups
+    if #pickups > 0 and not ctx.inInstance and not qs.full then
+        local p = pickups[1]
+        local xp = 0
+        for _, s in ipairs(pickups) do xp = xp + (s.xp or 0) end
+        local score = 50 + math.min(20, pct(xp, xpMax))
+        if #qs.inZone < 3 then score = score + 8 end
+        add({ kind = "pickup", score = score, icon = "?",
+            title = string.format("Pick up %d quest%s on your route (~%s XP)", #pickups, #pickups == 1 and "" or "s", ns.FormatNumber(xp)),
+            detail = string.format("Nearest: %s%s. The route folds them in with your objectives and turn-ins.",
+                p.title or "?", p.who and (" from " .. p.who) or ""),
+            action = { questID = p.questID, mapID = p.mapID, x = p.x, y = p.y } })
     end
 
     --------------------------------------------------------------- Dungeons
@@ -302,7 +327,11 @@ function A:Context()
         sessionSeconds = ns.Now() - (ns.Tracker.sessionStart or ns.Now()),
         gear = ns.Gear:Get(), quests = ns.Quests:Summary(), priorityQuest = ns.Quests:Priority(),
         timeToLevel = ns.Tracker:TimeToLevel(),
+        route = ns.Route and ns.Route.steps or {}, routeYards = ns.Route and ns.Route.totalYards or 0,
+        questie = ns.QuestieBridge and ns.QuestieBridge.IsAvailable() or false,
     }
+    ctx.pickups = {}
+    for _, s in ipairs(ctx.route) do if s.kind == "pickup" then table.insert(ctx.pickups, s) end end
     return ctx
 end
 
@@ -319,7 +348,7 @@ end
 
 function A:OnLogin()
     local refresh = ns.Debounce(1, function() A:Refresh() end)
-    for _, msg in ipairs({ "QUESTS_SCANNED", "ZONE_CHANGED", "LEVEL_UP", "GEAR_SCORED", "ACTIVITY_CHANGED", "GROUP_CHANGED", "RESTED_CHANGED", "XP_CHANGED" }) do
+    for _, msg in ipairs({ "QUESTS_SCANNED", "ROUTE_CHANGED", "ZONE_CHANGED", "LEVEL_UP", "GEAR_SCORED", "ACTIVITY_CHANGED", "GROUP_CHANGED", "RESTED_CHANGED", "XP_CHANGED" }) do
         ns.Listen(msg, refresh)
     end
     ns.Ticker(20, function() A:Refresh() end)

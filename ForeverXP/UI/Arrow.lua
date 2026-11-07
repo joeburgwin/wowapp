@@ -45,6 +45,12 @@ end
 
 function R:AutoTarget()
     if self.target and self.target.manual and ns.Now() - self.target.setAt < MANUAL_TTL then return end
+    local step = ns.Route and ns.db.routeMode ~= false and ns.Route:Next()
+    if step then
+        local prefix = step.kind == "pickup" and "Pick up: " or (step.kind == "turnin" and "Turn in: " or "")
+        self:SetTarget(step.mapID, step.x, step.y, prefix .. (step.title or ""), false)
+        return
+    end
     local q = ns.Quests and ns.Quests:Priority()
     if q and q.wp then
         self:SetTarget(q.wp.mapID, q.wp.x, q.wp.y, q.title, false)
@@ -128,5 +134,6 @@ end
 function R:OnLogin()
     self:Create()
     ns.Listen("QUESTS_SCANNED", function() R:AutoTarget() end)
+    ns.Listen("ROUTE_CHANGED", function() R:AutoTarget() end)
     ns.Listen("SETTINGS_CHANGED", function() R:Tick() end)
 end

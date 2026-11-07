@@ -33,6 +33,9 @@ local function help()
     ns.Print("  /fxp zone 35 45    set the level range of the zone you are in")
     ns.Print("  /fxp learn <zone>  bind the current map to a route zone")
     ns.Print("  /fxp zones         list route zones for your level")
+    ns.Print("  /fxp route         toggle route mode / print the current route")
+    ns.Print("  /fxp skip          skip the current route stop")
+    ns.Print("  /fxp questie       check whether Questie pickups are available")
 end
 
 local function handle(msg)
@@ -115,6 +118,35 @@ local function handle(msg)
         for i, c in ipairs(ns.DungeonsForLevel(level, API.PlayerFaction())) do
             if i > 3 then break end
             ns.Print("  dungeon: %s %d-%d · quests at %s", c.dungeon.name, c.dungeon.min, c.dungeon.max, c.dungeon.questHub or "?")
+        end
+    elseif cmd == "route" then
+        if rest == "off" or rest == "on" then
+            db.routeMode = (rest == "on")
+        elseif rest == "toggle" then
+            db.routeMode = not db.routeMode
+        end
+        ns.Fire("SETTINGS_CHANGED")
+        ns.Route:Rebuild()
+        if not db.routeMode then ns.Print("route mode off (/fxp route on)"); return end
+        local steps = ns.Route.steps
+        ns.Print("%s", ns.Route.Summary(steps, ns.Route.totalYards) or "route: no stops here yet (need quests in this zone with known locations)")
+        for i, s in ipairs(steps) do
+            if i > 10 then ns.Print("  ... %d more", #steps - 10); break end
+            ns.Print("  %d. [%s] %s%s (%s yd)", i, s.kind, s.title or "?", s.who and (" @ " .. s.who) or "", ns.FormatCompact(s.leg or 0))
+        end
+    elseif cmd == "skip" then
+        local s = ns.Route:Next()
+        if not s then ns.Print("no route stop to skip"); return end
+        ns.Route:Skip(s)
+        ns.Print("skipped %s", s.title or "?")
+    elseif cmd == "questie" then
+        local B = ns.QuestieBridge
+        if B.IsAvailable() then
+            local px, py, mapID = API.PlayerMapPosition()
+            local n = px and #B.Pickups(mapID, px, py, { level = API.PlayerLevel(), slack = db.pickupLevelSlack or 2, force = true }) or 0
+            ns.Print("Questie %s detected · %d pickup%s available on this map", tostring(B.Version()), n, n == 1 and "" or "s")
+        else
+            ns.Print("Questie not detected. Install the Questie Forever build (Questie + QuestieDB) to get quest pickups in the route.")
         end
     elseif cmd == "debug" then
         db.debug = not db.debug

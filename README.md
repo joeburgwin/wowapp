@@ -15,11 +15,35 @@ there is no combat log, so ForeverXP only uses XP, quest, map and item APIs.
 | --- | --- |
 | **Advisor panel** | Top 1-5 suggestions with a one-line reason, plus a status line (level, XP/hour, time to level, rested %, gear rating, current activity). Click a suggestion to track its quest and set a map waypoint. |
 | **Direction arrow** | A small arrow that rotates toward the quest the advisor thinks is most valuable (or the suggestion you clicked), with distance in yards. Right-click to go back to automatic mode. |
-| **Zone quest list** | Compact, colour-coded list of the quests in your current zone: completed first, then by XP, with objective progress. Click to track. |
+| **Route** | With route mode on, the quest list becomes a numbered walking order: quest pickups (from Questie), objectives and turn-ins in your zone, ordered into one efficient path from where you stand. The arrow steps through it. Left-click a step to point the arrow at it, right-click to skip it. |
+| **Zone quest list** | With route mode off, a compact, colour-coded list of the quests in your current zone: completed first, then by XP, with objective progress. Click to track. |
 | **Toast** | A faded-in line at the top of the screen whenever the top suggestion changes (optional). |
 
 All three overlays are drag-to-move, scalable and semi-transparent. Lock them
 with `/fxp lock`.
+
+## Quest routing and Questie
+
+The game only tells addons about quests already in your log, so on its own
+ForeverXP can order your current objectives and turn-ins but cannot know which
+quest givers you have not visited yet. Install **Questie** (the official
+Forever build: both `Questie` and `QuestieDB` from the same release) and
+ForeverXP reads its database to add nearby *available* quests to the route:
+
+* Pickups are limited to quests you can accept now, at most a couple of levels
+  above you (configurable), never gray, never repeatable, and only those whose
+  giver stands on your current map.
+* Turn-in locations for completed quests come from Questie when the client
+  does not expose a waypoint.
+* The route is planned as a path from your position: nearest-neighbour order
+  with a 2-opt pass, with turn-ins nudged slightly earlier so you drop them off
+  on the way. It is rebuilt whenever the quest log changes, so accepting a
+  quest turns its pickup stop into an objective stop automatically.
+* Reaching a quest giver or right-clicking a step suppresses that stop for a
+  few minutes so the arrow doesn't bounce back.
+
+`/fxp questie` reports whether Questie was detected and how many pickups are
+on your map. Without Questie everything else still works.
 
 ## How it decides
 
@@ -43,6 +67,8 @@ Each tick the advisor builds a context and scores candidate actions:
   and movement. Grinding with no rested XP gets flagged against the questing
   rate expected at your level; grinding *with* rested XP is steered onto quest
   mobs, because rested XP doubles kill XP but not quest XP.
+* **Pickups.** With Questie, "pick up N quests on your route" appears with the
+  nearest giver, boosted when your log is thin for the zone.
 * **Housekeeping.** Gray quests (10% XP) are listed for turn-in or abandon.
 
 The route database covers every original 1-60 zone and dungeon, plus the new
@@ -79,6 +105,9 @@ to the number `/dump select(4, GetBuildInfo())` prints in-game.
 /fxp zones [level]   list best-fit zones and dungeons for a level
 /fxp zone 35 45      set the level range of the zone you are standing in
 /fxp learn Riverglades   bind the current map to a route zone by name
+/fxp route [on|off]  toggle route mode, or print the current route
+/fxp skip            skip the current route stop
+/fxp questie         check whether Questie pickups are available
 ```
 
 ## Caveats
@@ -102,8 +131,8 @@ to the number `/dump select(4, GetBuildInfo())` prints in-game.
 
 `tests/mock_wow.lua` is a tiny stand-in for the WoW UI environment that loads
 the addon in TOC order and lets the tests drive the pure logic (zone matching,
-gear scoring, activity classification, advisor ranking, arrow math, slash
-commands). Lua 5.4 is used for the tests; the addon itself is written for the
+gear scoring, activity classification, advisor ranking, arrow math, route
+planning, the Questie bridge against a mocked Questie, slash commands). Lua 5.4 is used for the tests; the addon itself is written for the
 client's Lua 5.1.
 
 Layout:
@@ -118,6 +147,8 @@ ForeverXP/
   Tracker.lua       XP samples, XP/hour, activity classification
   Gear.lua          equipped gear scoring
   Quests.lua        quest log scan, XP estimates, difficulty, waypoints
+  Questie.lua       optional Questie bridge (available quests, turn-in spots)
+  Route.lua         route planner (nearest-neighbour + 2-opt) and step tracking
   Advisor.lua       pure suggestion builder + live context
   UI/Panel.lua      advisor overlay + toast
   UI/Arrow.lua      direction arrow

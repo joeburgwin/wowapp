@@ -75,19 +75,24 @@ function O:Create()
     checkbox(panel, "Show zone quest list", "showQuestList", 16, y - 112)
     checkbox(panel, "Toast when the top suggestion changes", "toasts", 16, y - 140)
     checkbox(panel, "Hide overlays in combat", "hideInCombat", 16, y - 168)
+    checkbox(panel, "Route mode: order zone stops into one path", "routeMode", 16, y - 196)
+    checkbox(panel, "Include quest pickups from Questie", "questiePickups", 16, y - 224, "Needs the Questie addon (Forever build).")
 
     slider(panel, "Overlay scale", "scale", 320, y - 10, 0.6, 1.6, 0.05, "%s: %.2f")
     slider(panel, "Overlay opacity", "alpha", 320, y - 60, 0.3, 1, 0.05, "%s: %.2f")
     slider(panel, "Suggestions shown", "maxSuggestions", 320, y - 110, 1, 5, 1, "%s: %d")
     slider(panel, "Quest rows", "questListRows", 320, y - 160, 3, 12, 1, "%s: %d")
+    slider(panel, "Pickups per route", "routeMaxPickups", 320, y - 210, 0, 12, 1, "%s: %d")
+    slider(panel, "Pickup levels above you", "pickupLevelSlack", 320, y - 260, 0, 5, 1, "%s: %d")
 
     local help = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    help:SetPoint("TOPLEFT", 16, y - 210)
+    help:SetPoint("TOPLEFT", 16, y - 300)
     help:SetWidth(560)
     help:SetJustifyH("LEFT")
     help:SetText("|cff7fd4ff/fxp|r options  ·  |cff7fd4ff/fxp lock|r  ·  |cff7fd4ff/fxp reset|r positions  ·  |cff7fd4ff/fxp status|r print what the advisor sees\n"
         .. "|cff7fd4ff/fxp zone <min> <max>|r override the level range of the zone you stand in (new Forever zones are estimates)\n"
-        .. "|cff7fd4ff/fxp learn|r bind the current map to the zone you name: /fxp learn Riverglades")
+        .. "|cff7fd4ff/fxp learn|r bind the current map to the zone you name: /fxp learn Riverglades\n"
+        .. "|cff7fd4ff/fxp route|r toggle route mode  ·  |cff7fd4ff/fxp skip|r skip the current stop  ·  |cff7fd4ff/fxp questie|r check Questie")
 
     if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
         local ok, category = pcall(Settings.RegisterCanvasLayoutCategory, panel, panel.name)

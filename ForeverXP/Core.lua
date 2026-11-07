@@ -5,7 +5,7 @@
 local ADDON, ns = ...
 ForeverXP = ns -- exposed for /dump and other addons
 ns.ADDON = ADDON
-ns.VERSION = "0.1.0"
+ns.VERSION = "0.2.0"
 ns.PREFIX = "|cff7fd4ffForeverXP|r"
 
 -------------------------------------------------------------------------------
@@ -24,6 +24,11 @@ ns.defaults = {
     questListRows = 8,
     hideInCombat = false,
     minimized = false,
+    -- route planning
+    routeMode = true,          -- order zone stops into a path and step the arrow through it
+    questiePickups = true,     -- include quests you can pick up (needs Questie)
+    pickupLevelSlack = 2,      -- include pickups up to this many levels above you
+    routeMaxPickups = 6,       -- most pickups to fold into one route
     -- window length (seconds) used for XP/hour
     xpWindow = 900,
     positions = {}, -- frameName -> {point, x, y}

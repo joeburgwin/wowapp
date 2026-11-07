@@ -24,14 +24,32 @@ local function createRow(parent)
     row.right:SetJustifyH("RIGHT")
     row.right:SetWidth(70)
     row.title:SetPoint("RIGHT", row.right, "LEFT", -4, 0)
-    row:SetScript("OnClick", function(self)
+    row:SetScript("OnClick", function(self, button)
+        local s = self.step
+        if s then
+            if button == "RightButton" then ns.Route:Skip(s); return end
+            if s.quest then API.SuperTrackQuest(s.questID) end
+            if ns.Arrow then ns.Arrow:SetTarget(s.mapID, s.x, s.y, s.title, true) end
+            return
+        end
         local q = self.quest
         if not q then return end
         API.SuperTrackQuest(q.questID)
         if q.wp and ns.Arrow then ns.Arrow:SetTarget(q.wp.mapID, q.wp.x, q.wp.y, q.title, true) end
     end)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     row:SetScript("OnEnter", function(self)
         local q = self.quest
+        if self.step and not q then
+            if not GameTooltip then return end
+            local s = self.step
+            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+            GameTooltip:AddLine(s.title, 1, 1, 1)
+            GameTooltip:AddLine(string.format("Pick up from %s · level %s · ~%s XP", s.who or "?", tostring(s.level or "?"), ns.FormatNumber(s.xp or 0)), 0.8, 0.8, 0.8, true)
+            GameTooltip:AddLine("Left-click: point the arrow here · Right-click: skip", 0.5, 0.83, 1)
+            GameTooltip:Show()
+            return
+        end
         if not q or not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine(q.title, 1, 1, 1)
@@ -82,11 +100,46 @@ function L.Order(list)
     return copy
 end
 
+local KIND_ICON = { pickup = "|cff7fd4ff?|r", objective = "|cffffff00●|r", turnin = "|cff55ff55✔|r" }
+
+-- Route view: numbered steps in walking order.
+function L:UpdateRoute(steps)
+    local f, db = self.frame, ns.db
+    local total = ns.Route.totalYards or 0
+    f.header:SetText("|cff7fd4ffRoute|r · " .. (ns.Route.Summary(steps, total) or ""):gsub("^Route: ", ""))
+    local maxRows = ns.Clamp(db.questListRows or 8, 1, 12)
+    local shown = 0
+    for i, row in ipairs(f.rows) do
+        local s = steps[i]
+        if s and i <= maxRows then
+            row.quest = s.quest
+            row.step = s
+            row.mark:SetText(string.format("|cffaaaaaa%d|r", i))
+            local who = s.who and (" |cff888888@ " .. s.who .. "|r") or ""
+            row.title:SetText((KIND_ICON[s.kind] or "•") .. " " .. (s.title or "?") .. who)
+            row.right:SetText(string.format("|cffaaaaaa%s yd|r", ns.FormatCompact(s.leg or 0)))
+            row:Show()
+            shown = shown + 1
+        else
+            row.quest, row.step = nil, nil
+            row:Hide()
+        end
+    end
+    f:SetScale(db.scale or 1)
+    f:SetAlpha(db.alpha or 0.85)
+    f:SetHeight(24 + shown * (ROW_H + 1) + PAD)
+    f:Show()
+end
+
 function L:Update()
     local f = self.frame
     if not f then return end
     local db = ns.db
     if not db.enabled or not db.showQuestList or (db.hideInCombat and API.InCombat()) then f:Hide(); return end
+    if db.routeMode ~= false and ns.Route and #(ns.Route.steps or {}) > 0 then
+        self:UpdateRoute(ns.Route.steps)
+        return
+    end
     local all = ns.Quests.list or {}
     local inZone = {}
     for _, q in ipairs(all) do if q.inZone then table.insert(inZone, q) end end
@@ -131,6 +184,7 @@ end
 function L:OnLogin()
     self:Create()
     ns.Listen("QUESTS_SCANNED", function() L:Update() end)
+    ns.Listen("ROUTE_CHANGED", function() L:Update() end)
     ns.Listen("SUGGESTIONS", function() L:Update() end)
     ns.Listen("COMBAT", function() L:Update() end)
     ns.Listen("SETTINGS_CHANGED", function() L:Update() end)

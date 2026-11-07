@@ -177,4 +177,28 @@ function M.Event(ns, event, ...)
     fn(ns.eventFrame, event, ...)
 end
 
+
+-------------------------------------------------------------------------------
+-- Optional Questie mock (call M.EnableQuestie() in a test).
+-- Shapes mirror Questie's Forever build: AvailableQuests.__availableQuests,
+-- QuestieDB.GetQuest / :GetNPC / :GetObject, ZoneDB:GetUiMapIdByAreaId.
+-------------------------------------------------------------------------------
+function M.EnableQuestie(data)
+    data = data or {}
+    local modules = {}
+    QuestieLoader = { ImportModule = function(_, name) modules[name] = modules[name] or {}; return modules[name] end }
+    local db = QuestieLoader:ImportModule("QuestieDB")
+    local avail = QuestieLoader:ImportModule("AvailableQuests")
+    local zone = QuestieLoader:ImportModule("ZoneDB")
+    avail.__availableQuests = data.available or {}
+    db.quests, db.npcs, db.objects = data.quests or {}, data.npcs or {}, data.objects or {}
+    function db.GetQuest(id) return db.quests[id] end
+    function db:GetNPC(id) return self.npcs[id] end
+    function db:GetObject(id) return self.objects[id] end
+    function zone:GetUiMapIdByAreaId(areaId) return (data.areaToMap or {})[areaId] end
+    M.questie = { modules = modules, db = db, avail = avail }
+    return M.questie
+end
+function M.DisableQuestie() QuestieLoader = nil; M.questie = nil end
+
 return M

@@ -376,5 +376,159 @@ test("API shim survives missing functions", function()
     C_Map = savedMap
 end)
 
+
+-------------------------------------------------------------------------------
+print("Route planner")
+test("Plan: nearest-neighbour + 2-opt yields a sensible order and legs", function()
+    local stops = {
+        { name = "far", x = 0.9, y = 0.9 }, { name = "near", x = 0.52, y = 0.5 },
+        { name = "mid", x = 0.7, y = 0.7 }, { name = "mid2", x = 0.6, y = 0.6 },
+    }
+    local order, total = ns.Route.Plan(stops, { x = 0.5, y = 0.5 }, 1000, 1000)
+    eq(#order, 4); eq(order[1].name, "near"); eq(order[2].name, "mid2"); eq(order[3].name, "mid"); eq(order[4].name, "far")
+    near(order[1].leg, 20, 0.01); truthy(total > 500 and total < 600, "total " .. total)
+    eq(order[4].cum, total)
+end)
+test("Plan: 2-opt fixes a greedy crossing", function()
+    -- greedy from (0,0) goes A(0.1,0) then C(0.9,0) before B(0.5,0.4)... 2-opt should order A,B,C or A,C,B whichever is shorter
+    local stops = { { name = "C", x = 0.9, y = 0.0 }, { name = "A", x = 0.1, y = 0.0 }, { name = "B", x = 0.5, y = 0.05 } }
+    local order, total = ns.Route.Plan(stops, { x = 0, y = 0 }, 1000, 1000)
+    eq(order[1].name, "A"); eq(order[2].name, "B"); eq(order[3].name, "C")
+    truthy(total < 950, "total " .. total)
+end)
+test("Plan: empty and single", function()
+    local o, t = ns.Route.Plan({}, { x = 0, y = 0 }, 1, 1); eq(#o, 0); eq(t, 0)
+    o, t = ns.Route.Plan({ { x = 0.5, y = 0.5 } }, { x = 0.5, y = 0.4 }, 1000, 1000); eq(#o, 1); near(t, 100, 0.01)
+end)
+test("Plan: weight pulls turn-ins earlier", function()
+    local stops = { { name = "obj", x = 0.60, y = 0.5 }, { name = "turnin", x = 0.61, y = 0.5, weight = 0.85 } }
+    local order = ns.Route.Plan(stops, { x = 0.5, y = 0.5 }, 1000, 1000)
+    eq(order[1].name, "turnin")
+end)
+test("Summary", function()
+    eq(ns.Route.Summary({ { kind = "pickup" }, { kind = "objective" }, { kind = "objective" }, { kind = "turnin" } }, 2400), "Route: 1 pickup, 2 objectives, 1 turn-in, ~2.4k yd")
+    eq(ns.Route.Summary({}, 0), nil)
+end)
+
+-------------------------------------------------------------------------------
+print("Questie bridge")
+test("Without Questie everything is empty", function()
+    M.DisableQuestie()
+    eq(ns.QuestieBridge.IsAvailable(), false)
+    eq(#ns.QuestieBridge.Pickups(47, 0.5, 0.5, {}), 0)
+    eq(ns.QuestieBridge.TurnInLocation(1, 47), nil)
+end)
+local function questieData()
+    return {
+        available = { [201] = true, [202] = true, [203] = true, [204] = true, [205] = true },
+        quests = {
+            [201] = { name = "Near Giver",  level = 23, requiredLevel = 20, Starts = { NPC = { 5001 } }, Finisher = { NPC = { 5001 } } },
+            [202] = { name = "Far Giver",   level = 24, requiredLevel = 22, Starts = { NPC = { 5002 } }, Finisher = { NPC = { 5002 } } },
+            [203] = { name = "Too High",    level = 29, requiredLevel = 27, Starts = { NPC = { 5001 } } },
+            [204] = { name = "Gray One",    level = 10, requiredLevel = 5,  Starts = { NPC = { 5001 } } },
+            [205] = { name = "Other Zone",  level = 23, requiredLevel = 20, Starts = { NPC = { 5003 } } },
+            [102] = { name = "Wolves at Our Heels", level = 22, requiredLevel = 20, Starts = { NPC = { 5002 } }, Finisher = { NPC = { 5002 } } },
+        },
+        npcs = {
+            [5001] = { name = "Innkeeper", spawns = { [10] = { { 52, 50 } } } },
+            [5002] = { name = "Watcher",   spawns = { [10] = { { 70, 70 }, { 20, 20 } } } },
+            [5003] = { name = "Elsewhere", spawns = { [11] = { { 50, 50 } } } },
+        },
+        areaToMap = { [10] = 47, [11] = 48 },
+    }
+end
+test("Pickups: filters by level, map, log and sorts by distance", function()
+    M.EnableQuestie(questieData())
+    truthy(ns.QuestieBridge.IsAvailable())
+    local list = ns.QuestieBridge.Pickups(47, 0.5, 0.5, { level = 23, slack = 2, exclude = { [202] = false }, force = true })
+    eq(#list, 2); eq(list[1].questID, 201); eq(list[1].giver, "Innkeeper"); near(list[1].x, 0.52); eq(list[2].questID, 202)
+    near(list[2].x, 0.70, 1e-9, "nearest of two spawns")
+    local capped = ns.QuestieBridge.Pickups(47, 0.5, 0.5, { level = 23, slack = 2, maxCount = 1, force = true })
+    eq(#capped, 1)
+    local excl = ns.QuestieBridge.Pickups(47, 0.5, 0.5, { level = 23, slack = 2, exclude = { [201] = true }, force = true })
+    eq(#excl, 1); eq(excl[1].questID, 202)
+end)
+test("TurnInLocation from Questie finisher", function()
+    local x, y, who = ns.QuestieBridge.TurnInLocation(102, 47, 0.5, 0.5)
+    near(x, 0.70); near(y, 0.70); eq(who, "Watcher")
+end)
+test("Bridge survives a broken Questie", function()
+    QuestieLoader = { ImportModule = function() error("boom") end }
+    eq(ns.QuestieBridge.IsAvailable(), false)
+    eq(#ns.QuestieBridge.Pickups(47, 0.5, 0.5, { force = true }), 0)
+    M.DisableQuestie()
+end)
+
+-------------------------------------------------------------------------------
+print("Route integration")
+test("Route built from quest log + Questie pickups; arrow follows it", function()
+    M.EnableQuestie(questieData())
+    p.pos = { x = 0.5, y = 0.5 }
+    p.quests = {
+        { questID = 0, title = "Duskwood", isHeader = true },
+        { questID = 101, title = "The Legend of Stalvan", level = 24, xp = 1400, inZone = true, complete = false, objectives = {}, wp = { x = 0.6, y = 0.4 } },
+        { questID = 102, title = "Wolves at Our Heels", level = 22, xp = 1100, inZone = true, complete = true, objectives = {} }, -- no client waypoint: Questie finisher
+        { questID = 103, title = "Seasoned Wolf Kabobs", level = 20, xp = 900, inZone = true, complete = false, objectives = {}, wp = { x = 0.3, y = 0.3 } },
+    }
+    ns.Route.skipped = {}
+    ns.Quests:Scan()
+    ns.Route:Rebuild()
+    local steps = ns.Route.steps
+    eq(#steps, 5, "2 pickups + 2 objectives + 1 turn-in")
+    eq(steps[1].kind, "pickup"); eq(steps[1].questID, 201)
+    local turnin = has(steps, function(s) return s.kind == "turnin" end)
+    truthy(turnin); eq(turnin.questID, 102); eq(turnin.who, "Watcher")
+    truthy(ns.Route.totalYards > 0)
+    ns.Arrow:Clear()
+    ns.Arrow:AutoTarget()
+    truthy(ns.Arrow.target.label:find("^Pick up: Near Giver"))
+    ns.Advisor:Refresh()
+    local s = ns.Advisor.suggestions
+    local pick = has(s, function(x) return x.kind == "pickup" end)
+    truthy(pick); truthy(pick.title:find("Pick up 2 quests on your route")); eq(pick.action.questID, 201)
+    local keep = has(s, function(x) return x.kind == "quest" end)
+    truthy(keep and keep.detail:find("Route: 2 pickups, 2 objectives, 1 turn%-in"), keep and keep.detail)
+    ns.QuestList:Update()
+    truthy(_G.ForeverXPQuestList.__shown)
+end)
+test("Skipping a stop advances the route", function()
+    local first = ns.Route:Next()
+    ns.HandleCommand("skip")
+    truthy(ns.Route:Next().questID ~= first.questID)
+    truthy(M.lastMessage:find("skipped"))
+end)
+test("Arrival at a pickup suppresses it", function()
+    ns.Route.skipped = {}
+    ns.Route:Rebuild()
+    p.pos = { x = 0.52, y = 0.5 } -- standing on the Innkeeper
+    ns.Route:CheckArrival()
+    truthy(ns.Route:Next().questID ~= 201)
+    p.pos = { x = 0.5, y = 0.5 }
+    ns.Route.skipped = {}
+end)
+test("Accepting a pickup removes it from the route", function()
+    table.insert(p.quests, { questID = 201, title = "Near Giver", level = 23, xp = 1200, inZone = true, complete = false, objectives = {}, wp = { x = 0.55, y = 0.55 } })
+    ns.Quests:Scan(); ns.QuestieBridge.Invalidate(); ns.Route:Rebuild()
+    local pick = has(ns.Route.steps, function(s) return s.kind == "pickup" and s.questID == 201 end)
+    eq(pick, nil)
+    truthy(has(ns.Route.steps, function(s) return s.kind == "objective" and s.questID == 201 end))
+    table.remove(p.quests)
+end)
+test("/fxp route and /fxp questie commands", function()
+    ns.HandleCommand("route"); truthy(M.lastMessage:find("yd%)"))
+    ns.HandleCommand("questie"); truthy(M.lastMessage:find("Questie") and M.lastMessage:find("pickup"))
+    ns.HandleCommand("route off"); eq(ns.db.routeMode, false); eq(#ns.Route.steps, 0)
+    ns.Arrow:AutoTarget(); truthy(ns.Arrow.target and not ns.Arrow.target.label:find("Pick up"), "falls back to priority quest")
+    ns.HandleCommand("route on"); eq(ns.db.routeMode, true); truthy(#ns.Route.steps > 0)
+    M.DisableQuestie()
+    ns.HandleCommand("questie"); truthy(M.lastMessage:find("not detected"))
+end)
+test("No Questie: route still orders log quests", function()
+    ns.QuestieBridge.Invalidate(); ns.Quests:Scan(); ns.Route:Rebuild()
+    local steps = ns.Route.steps
+    eq(#steps, 2, "two objectives with client waypoints; the turn-in has no location without Questie")
+    truthy(not has(steps, function(s) return s.kind == "pickup" end))
+end)
+
 print(string.format("\n%d passed, %d failed", passed, failed))
 os.exit(failed == 0 and 0 or 1)
