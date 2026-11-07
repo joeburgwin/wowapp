@@ -1,0 +1,5 @@
+*.zip
+dist/
+.luarocks/
+*.swp
+.DS_Store
